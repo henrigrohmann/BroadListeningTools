@@ -1934,3 +1934,261 @@ LLM	クラスタリング・要約	Task Worker
 や
 Client の「画面 → hooks → API → Route Handler → DB」シーケンス図
 も作成できますが、どちらを続けますか？
+
+了解。ここでは Client（Next.js フロントエンド）全体の「画面 → hooks → API → Route Handler → repository → DB」データフローを、エンジニアがコードを読むときと同じ粒度で体系的にまとめます。
+実際のコード構造に沿って、どのファイルが何を担当し、どこで責務が切れているかを明確にします。
+
+---
+
+1. 全体データフロー（コード構造に沿った俯瞰図）
+
+フロントエンドのデータフローは、実際には次の 6 層で構成されています。
+
+UI（components）
+  ↓ props
+hooks（状態管理・整形）
+  ↓ fetch
+api/（fetcher）
+  ↓ HTTP
+Next.js Route Handler（/app/api/...）
+  ↓ repository
+DB（SQLite）
+
+
+この流れは public-viewer と admin の両方で共通です。
+
+---
+
+2. 画面（components）→ hooks のデータフロー
+
+例：レポート詳細ページ（app/reports/[id]/page.tsx）
+
+export default function ReportPage({ params }) {
+  const { report, isLoading } = useReport(params.id);
+  const { clusters } = useClusters(params.id);
+
+  return (
+    <PageContainer>
+      <ReportSummary summary={report?.summary} />
+      <ClusterList clusters={clusters} />
+    </PageContainer>
+  );
+}
+
+
+ここでの責務
+
+• UI は hooks を呼ぶだけ
+• API を知らない
+• DB を知らない
+• LLM を知らない
+
+
+UI は props を受け取って描画するだけの「純粋な表示層」。
+
+---
+
+3. hooks → API のデータフロー
+
+例：hooks/useReport.ts
+
+import useSWR from 'swr';
+import { getReport } from '@/api/report';
+
+export function useReport(reportId: string) {
+  const { data, error, isLoading } = useSWR(
+    reportId ? `/reports/${reportId}` : null,
+    () => getReport(reportId)
+  );
+
+  return {
+    report: data,
+    isLoading,
+    error,
+  };
+}
+
+
+ここでの責務
+
+• SWR によるキャッシュ管理
+• ローディング状態管理
+• データ整形（UI が扱いやすい形にする）
+• API 呼び出しは api/ に委譲
+
+
+hooks は UI と API の橋渡しであり、ロジックの中心。
+
+---
+
+4. API（fetcher）→ Route Handler のデータフロー
+
+例：api/report.ts
+
+import { fetcher } from '@/lib/fetcher';
+
+export async function getReport(reportId: string) {
+  return fetcher(`/api/reports/${reportId}`);
+}
+
+
+fetcher の例
+
+export async function fetcher(url: string, options?: RequestInit) {
+  const res = await fetch(url, options);
+  if (!res.ok) throw new Error('API Error');
+  return res.json();
+}
+
+
+ここでの責務
+
+• HTTP 通信の共通処理
+• JSON 化
+• エラー処理
+
+
+API 層は Route Handler の URL を知っている唯一の層。
+
+---
+
+5. Route Handler → repository のデータフロー
+
+例：app/api/reports/[id]/route.ts
+
+import { NextResponse } from 'next/server';
+import { getReportById } from '@/server/repository/report';
+
+export async function GET(req, { params }) {
+  const report = await getReportById(params.id);
+  return NextResponse.json(report);
+}
+
+
+ここでの責務
+
+• HTTP リクエストを受け取る
+• repository を呼び出す
+• JSON を返す
+
+
+Route Handler は DB に触れない。
+DB へのアクセスは repository に委譲される。
+
+---
+
+6. repository → DB のデータフロー
+
+例：server/repository/report.ts
+
+import { db } from '../db';
+
+export async function getReportById(id: string) {
+  return db.report.findUnique({
+    where: { id },
+    include: {
+      clusters: true,
+      sections: true,
+    },
+  });
+}
+
+
+ここでの責務
+
+• DB への直接アクセス
+• Prisma / SQL の実行
+• データの整形（必要最低限）
+
+
+repository は バックエンドのデータアクセス層であり、
+フロントからは完全に隔離されている。
+
+---
+
+7. 全体データフロー（Mermaid 図）
+
+flowchart LR
+
+    %% UI 層
+    A[UI Components<br/>page.tsx / ClusterList.tsx] --> B[hooks<br/>useReport / useClusters]
+
+    %% hooks 層
+    B --> C[api/<br/>getReport() / getClusters()]
+
+    %% fetcher 層
+    C --> D[Next.js Route Handler<br/>/app/api/.../route.ts]
+
+    %% repository 層
+    D --> E[repository<br/>server/repository/*.ts]
+
+    %% DB 層
+    E --> F[(SQLite DB)]
+
+    %% 戻り
+    F --> E --> D --> C --> B --> A
+
+
+---
+
+8. 技術者が理解すべき責務境界（コードに基づく）
+
+UI（components）
+
+• 描画のみ
+• ロジックなし
+• API も DB も知らない
+
+
+hooks
+
+• 状態管理
+• データ整形
+• API 呼び出し
+
+
+api/
+
+• fetcher を使って HTTP 通信
+• Route Handler の URL を知っている
+
+
+Route Handler
+
+• HTTP リクエストを受ける
+• repository を呼ぶ
+• JSON を返す
+
+
+repository
+
+• DB に直接アクセス
+• Prisma / SQL を実行
+
+
+DB
+
+• 永続化されたデータを保持
+
+
+---
+
+9. この構造のメリット
+
+• UI とロジックの完全分離
+• フロントは DB を知らない
+• バックエンドは UI を知らない
+• 変更に強い（疎結合）
+• OSS コントリビューターが安全に改修できる
+• public-viewer と admin が同じ構造で統一されている
+
+
+---
+
+必要であれば、
+「admin 専用のデータフロー図」
+や
+「public-viewer と admin の比較図」
+も作成できますが、どちらを続けますか？
+
+
