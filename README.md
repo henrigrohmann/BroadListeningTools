@@ -2192,3 +2192,329 @@ DB
 も作成できますが、どちらを続けますか？
 
 
+了解。ここからは **Client（Next.js フロント）内部の「層間で受け渡されるデータ構造（型）」と「各ファイルが実際に行っている処理」**を、エンジニアがコードを読むときと同じ粒度で体系的に解析します。
+
+あなたのプロジェクト（広聴AI Ver.4.x 系）で典型的に使われている構造を前提に、
+UI → hooks → api → Route Handler → repository → DB の順で、
+データ型（TypeScript interface）と処理内容を完全に分解します。
+
+---
+
+1. データモデル（TypeScript interface）
+
+まず、Client が扱うデータ型を整理します。
+これらは hooks → components → Route Handler → DB の全層で共通して使われる「契約（Contract）」です。
+
+レポート（Report）
+
+export interface Report {
+  id: string;
+  title: string;
+  summary: string; // 全体要約
+  created_at: string;
+  clusters: Cluster[];
+  sections: Section[];
+}
+
+
+クラスタ（Cluster）
+
+export interface Cluster {
+  cluster_id: string;
+  label: string; // AI生成テーマ名
+  summary: string; // クラスタ要約
+  comment_count: number;
+  representative_comments: string[];
+}
+
+
+コメント（Comment）
+
+export interface Comment {
+  id: string;
+  text: string;
+  cluster_id: string | null;
+  created_at: string;
+}
+
+
+セクション（Section）
+
+export interface Section {
+  section_id: string;
+  title: string;
+  summary: string;
+  clusters: string[]; // cluster_id の配列
+}
+
+
+embedding（散布図用）
+
+export interface EmbeddingPoint {
+  comment_id: string;
+  x: number;
+  y: number;
+  cluster_id: string;
+}
+
+
+---
+
+2. UI（components）で扱う props の型
+
+UI は hooks が返す型をそのまま props として受け取る。
+
+例：ClusterList.tsx
+
+interface Props {
+  clusters: Cluster[];
+}
+
+export function ClusterList({ clusters }: Props) {
+  return (
+    <div>
+      {clusters.map(c => (
+        <ClusterCard key={c.cluster_id} cluster={c} />
+      ))}
+    </div>
+  );
+}
+
+
+UI の責務
+
+• props を受け取って描画するだけ
+• API を知らない
+• DB を知らない
+• LLM を知らない
+
+
+---
+
+3. hooks 層の処理内容と返却型
+
+hooks は UI と API の橋渡しであり、
+
+• API 呼び出し
+• ローディング管理
+• データ整形
+を担当する。
+
+
+useReport.ts
+
+export function useReport(reportId: string) {
+  const { data, error, isLoading } = useSWR<Report>(
+    reportId ? `/reports/${reportId}` : null,
+    () => getReport(reportId)
+  );
+
+  return {
+    report: data,
+    isLoading,
+    error,
+  };
+}
+
+
+返却型
+
+{
+  report: Report | undefined;
+  isLoading: boolean;
+  error: any;
+}
+
+
+処理内容
+
+• SWR によるキャッシュ管理
+• reportId が null のときはフェッチしない
+• API 呼び出しは getReport() に委譲
+• UI が扱いやすい形に整形して返す
+
+
+---
+
+useClusters.ts
+
+export function useClusters(reportId: string) {
+  const { data } = useSWR<Cluster[]>(
+    reportId ? `/reports/${reportId}/clusters` : null,
+    () => getClusters(reportId)
+  );
+
+  const clusters = data?.sort((a, b) => b.comment_count - a.comment_count) ?? [];
+
+  return { clusters };
+}
+
+
+返却型
+
+{
+  clusters: Cluster[];
+}
+
+
+処理内容
+
+• API から取得したクラスタをソート
+• UI に渡すための整形を行う
+
+
+---
+
+useChartData.ts
+
+export function useChartData(reportId: string) {
+  const { data } = useSWR<EmbeddingPoint[]>(
+    reportId ? `/reports/${reportId}/embedding` : null,
+    () => getEmbedding(reportId)
+  );
+
+  const chartData = data?.map(p => ({
+    x: p.x,
+    y: p.y,
+    cluster: p.cluster_id,
+  })) ?? [];
+
+  return { chartData };
+}
+
+
+返却型
+
+{
+  chartData: { x: number; y: number; cluster: string }[];
+}
+
+
+処理内容
+
+• embedding を Recharts 用に整形
+• UI は座標とクラスタ色だけを扱えばよい
+
+
+---
+
+4. api 層（fetcher）で扱うデータと処理内容
+
+fetcher.ts
+
+export async function fetcher(url: string, options?: RequestInit) {
+  const res = await fetch(url, options);
+  if (!res.ok) throw new Error('API Error');
+  return res.json();
+}
+
+
+処理内容
+
+• fetch の共通処理
+• エラー処理
+• JSON 化
+
+
+---
+
+api/report.ts
+
+export async function getReport(reportId: string): Promise<Report> {
+  return fetcher(`/api/reports/${reportId}`);
+}
+
+
+処理内容
+
+• Route Handler を叩く
+• 型は Report を返す
+
+
+---
+
+5. Route Handler（Next.js サーバー側 API）
+
+app/api/reports/[id]/route.ts
+
+export async function GET(req, { params }) {
+  const report = await getReportById(params.id);
+  return NextResponse.json(report);
+}
+
+
+処理内容
+
+• HTTP リクエストを受ける
+• repository を呼び出す
+• JSON を返す
+
+
+返却型
+
+Report
+
+
+---
+
+6. repository 層（DB アクセス）
+
+server/repository/report.ts
+
+export async function getReportById(id: string) {
+  return db.report.findUnique({
+    where: { id },
+    include: {
+      clusters: true,
+      sections: true,
+    },
+  });
+}
+
+
+処理内容
+
+• Prisma / SQL を使って DB からデータ取得
+• clusters と sections を JOIN
+• Report 型に近い形で返す
+
+
+---
+
+7. 層間で受け渡されるデータの流れ（型付き）
+
+flowchart LR
+
+A[UI Components<br/>props: Report, Cluster[], Section[]] 
+  --> B[hooks<br/>return: {report: Report, clusters: Cluster[] }]
+
+B --> C[api/<br/>Promise<Report>]
+
+C --> D[Route Handler<br/>returns JSON<Report>]
+
+D --> E[repository<br/>returns PrismaReport]
+
+E --> F[(SQLite DB)]
+
+
+---
+
+8. 技術者が押さえるべきポイント
+
+• UI は型を props として受け取るだけ
+• hooks は API 呼び出しと整形を担当
+• api 層は fetcher を使って HTTP 通信
+• Route Handler は repository を呼ぶだけ
+• repository が DB にアクセスする唯一の層
+• LLM は admin の Task Worker 側でのみ使用
+• public-viewer は読み取り専用で安全
+
+
+---
+
+必要であれば、
+「実際のファイルを 1 つずつ読み解く“全ファイル責務マッピング”」
+や
+「admin 側の同じ構造の詳細解析」
+も続けて作成できますが、どちらを進めますか？
+
