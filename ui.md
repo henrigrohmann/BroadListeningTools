@@ -136,3 +136,133 @@ BreadcrumbRoot.tsx の責務は以下の通り：
 続けて貼ってくれれば同じ形式で仕様書化するよ。
 
 
+了解した、GROHMANN。
+このファイルは Chakra UI の Button を独自の recipe（buttonRecipe）で拡張した UI 基盤コンポーネントだね。
+短いけれど、UI レイヤーの統一感を作るうえで非常に重要な位置づけなので、ここでも ファイル単位の仕様書をまとめる。
+
+---
+
+📘 ファイル仕様書：components/ui/Button.tsx
+
+1. ファイル概要
+
+このコンポーネントは、
+Chakra UI の Button を、独自のデザインレシピ（buttonRecipe）で拡張したラッパコンポーネント。
+
+主な目的：
+
+• ChakraButton の見た目をプロジェクト全体で統一する
+• variant / size を recipe ベースで制御する
+• ChakraButtonProps と recipe の variant props を安全に合成する
+• ref を透過させる（forwardRef）
+
+
+UI デザインシステムの中核となる「統一ボタン」。
+
+---
+
+2. Props インタフェース
+
+type ButtonVariantProps = RecipeVariantProps<typeof buttonRecipe>;
+
+type ButtonProps =
+  ButtonVariantProps &
+  Omit<ChakraButtonProps, keyof ButtonVariantProps>;
+
+
+つまり：
+
+• variant / size は buttonRecipe で定義されたものを使う
+• それ以外の ChakraButtonProps（onClick, disabled, etc.）も利用可能
+• ただし recipe の variant と重複するキーは除外して型安全にする
+
+
+---
+
+3. 依存関係
+
+依存先	用途	
+Chakra UI Button	ベースとなるボタン	
+useRecipe	recipe からスタイルを生成	
+buttonRecipe	プロジェクト独自のボタンデザイン	
+forwardRef	ref 透過	
+ChakraButtonProps	標準ボタンの props	
+
+
+---
+
+4. 機能仕様（擬似コード）
+
+このコンポーネントの動作を 日本語の擬似コードで表現するとこうなる。
+
+---
+
+4.1 recipe の取得
+
+recipe = useRecipe({ recipe: buttonRecipe })
+
+
+Chakra の recipe システムを使い、
+variant / size に応じた CSS オブジェクトを生成する準備。
+
+---
+
+4.2 variant / size に応じたスタイル生成
+
+styles = recipe({ size, variant })
+
+
+buttonRecipe の定義に従って、
+
+• padding
+• border-radius
+• color
+• hover
+• disabled
+などのスタイルが生成される。
+
+
+---
+
+4.3 ChakraButton に適用して返す
+
+return <ChakraButton ref={ref} css={styles} {...rest} />
+
+
+• ref は透過
+• css に recipe のスタイルを適用
+• その他の props（onClick, disabled, etc.）はそのまま渡す
+
+
+---
+
+5. 責務まとめ
+
+この Button コンポーネントの責務は以下の通り：
+
+• プロジェクト全体で統一されたボタンスタイルを提供する
+• Chakra UI の Button を拡張し、recipe ベースの variant / size を適用する
+• ref を透過し、外部からの制御を可能にする
+• ChakraButtonProps と recipe props を型安全に合成する
+
+
+UI デザインシステムの基盤となる「統一ボタン」コンポーネント。
+
+---
+
+6. 使用例
+
+<Button variant="primary" size="md" onClick={handleClick}>
+  保存
+</Button>
+
+
+buttonRecipe に定義された variant / size が自動で適用される。
+
+---
+
+📦 components/ui/* の次のファイルを貼ってください
+
+このディレクトリには他にも UI 基盤コンポーネントがあるはずなので、
+続けて貼ってくれれば同じ形式で仕様書化するよ。
+
