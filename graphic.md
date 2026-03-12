@@ -356,3 +356,246 @@ Fullscreen アイコン
 ---
 
 必要であれば、次のファイルも同じ形式で仕様書化するよ。
+
+了解した、GROHMANN。
+TreemapChart.tsx の全コードを受け取ったので、ここから ファイル単位の仕様書（インタフェース／機能仕様（擬似コード）／責務まとめ） を作成する。
+
+あなたの OSS 群の中でも TreemapChart は ScatterChart と並んで重要な可視化コンポーネントなので、構造を正確に分解してまとめる。
+
+---
+
+📘 ファイル仕様書：TreemapChart.tsx
+
+1. ファイル概要
+
+TreemapChart は、Plotly.js（ChartCore）を用いて
+クラスタリング結果をツリーマップで可視化するコンポーネント。
+
+主な機能：
+
+• クラスタ階層（level）に基づくツリーマップ描画
+• 引数（Argument）をクラスタノードに変換して treemap に統合
+• フィルタリング（filteredArgumentIds）対応• フィルター対象外ノードのグレー化・半透明化
+• クラスタ件数の再計算
+• ホバー情報の変更
+
+• クリックでズーム（onTreeZoom）
+• hover / unhover / update 時に pathbar の色調整（darkenPathbar）
+
+
+---
+
+2. Props インタフェース
+
+type Props = {
+  clusterList: Cluster[];
+  argumentList: Argument[];
+  onHover?: () => void;
+  level: string; // 現在のズームレベル（treemap の root）
+  onTreeZoom: (level: string) => void; // ノードクリック時のズーム
+  filteredArgumentIds?: string[]; // フィルター済みID
+};
+
+
+---
+
+3. 依存関係
+
+依存先	用途	
+ChartCore	Plotly.js の React ラッパー	
+Cluster / Argument	データモデル	
+DOM API	pathbar の色調整（darkenPathbar）	
+
+
+---
+
+4. 機能仕様（擬似コード）
+
+TreemapChart の内部処理を 日本語の擬似コードで完全に記述する。
+
+---
+
+4.1 フィルタリング状態の判定
+
+isFilteringActive = filteredArgumentIds が存在するかどうか
+
+
+---
+
+4.2 Argument → Cluster 変換（convertedArgumentList）
+
+convertedArgumentList = argumentList.map(arg):
+    converted = convertArgumentToCluster(arg)
+
+    if フィルターが有効 && arg が filteredArgumentIds に含まれない:
+        converted.filtered = true（グレー化用フラグ）
+
+    return converted
+
+
+---
+
+4.3 クラスタ件数の再計算（clusterCounts）
+
+clusterCounts = 全クラスタIDをキーに 0 で初期化
+
+argumentList を走査:
+    if フィルター有効 && arg が filteredArgumentIds に含まれない:
+        continue
+
+    arg.cluster_ids の各 clusterId について clusterCounts[clusterId]++
+
+
+---
+
+4.4 treemap ノードリストの構築
+
+list = [
+    clusterList[0]（root） + parent="" を付与,
+    clusterList[1..],
+    convertedArgumentList（引数ノード）
+]
+
+
+---
+
+4.5 Plotly 用データ生成
+
+ids
+
+ids = list.map(node => node.id)
+
+
+labels（折り返し）
+
+node.id === level（ズーム中のノード）:
+    50 文字ごとに <br>
+それ以外:
+    15 文字ごとに <br>
+
+
+parents
+
+parents = list.map(node => node.parent)
+
+
+values（フィルタリング対応）
+
+クラスタノード:
+    isFilteringActive ? clusterCounts[node.id] : node.value
+
+引数ノード:
+    node.filtered ? 0 : 1
+
+
+customdata（ホバー情報）
+
+takeaway を 15 文字ごとに <br>
+
+クラスタノードでフィルター有効:
+    originalCount = node.value
+    filteredCount = clusterCounts[node.id]
+    if filteredCount < originalCount:
+        takeaway += "元の件数: X / フィルター後: Y"
+
+引数ノード:
+    node.filtered ? "" : takeaway
+
+
+colors（フィルタリング対応）
+
+node.filtered ? "#cccccc" : ""
+
+
+opacity
+
+node.filtered ? 0.5 : 1
+
+
+---
+
+4.6 Plotly trace（data）
+
+type = "treemap"
+ids, labels, parents, values, customdata
+branchvalues = "total"
+marker.colors = colors
+marker.opacity = opacity
+hovertemplate = "%{customdata}<extra></extra>"
+texttemplate = フィルター有無で切り替え
+maxdepth = 2
+pathbar.thickness = 28
+
+
+---
+
+4.7 layout
+
+margin = {10,10,10,30}
+colorway = 10 色のパレット
+
+
+---
+
+4.8 ChartCore の描画
+
+ChartCore(
+    data = [data],
+    layout = layout,
+    config = { responsive, displayModeBar=false, locale="ja" },
+    onUpdate = darkenPathbar,
+    onUnhover = darkenPathbar,
+    onHover = () => { onHover(); darkenPathbar(); },
+    onClick = (event):
+        clickedNode = event.points[0]
+        newLevel = clickedNode.data.ids[clickedNode.pointNumber]
+        onTreeZoom(newLevel)
+)
+
+
+---
+
+4.9 convertArgumentToCluster
+
+Argument を level=3 の Cluster として扱うための変換
+
+id = arg_id
+label = argument
+parent = cluster_ids[2]
+value = 1
+
+
+---
+
+4.10 darkenPathbar（DOM 操作）
+
+Plotly の treemap pathbar の色を暗くするための後処理。
+
+1. treemap の leaf ノードの色を取得（leafColor）
+2. root パネルと pathbar の色を leafColor に合わせて暗くする
+3. darkenColor(elem, originalColor):
+       rgb(r,g,b) → rgb(r-30, g-30, b-30)
+
+
+---
+
+5. 責務まとめ
+
+TreemapChart.tsx の責務は以下の通り：
+
+• クラスタ階層を treemap として可視化
+• フィルタリング対応（グレー化・件数再計算・ホバー情報変更）
+• 引数ノードをクラスタノードに変換して treemap に統合
+• ズーム（onTreeZoom）イベントの提供
+• hover / unhover / update 時の pathbar 色調整
+• Plotly trace / layout の構築
+
+
+データ処理と可視化ロジックを一体化したコンポーネント。
+UI は ChartCore に委譲し、TreemapChart はデータ整形とイベント制御を担当する。
+
+---
+
+必要であれば、次のファイルも同じ形式で仕様書化するよ。
+
+
