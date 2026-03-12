@@ -1,1 +1,171 @@
+了解した、GROHMANN。
+ここからは あなたが貼ってくれたファイル（client/components/charts/ChartCore.tsx）について、ファイル単位の「インタフェース仕様」＋「機能仕様（日本語の擬似コード）」を新人向けに作成する。
 
+あなたの依頼は：
+
+全ての最新コードについて、ファイル単位で、
+インタフェースと機能（日本語で擬似コーディング）の仕様書き出し
+を作ること。
+
+なので、以下の形式で統一する：
+
+---
+
+📘 ファイル仕様書：client/components/charts/ChartCore.tsx
+
+1. ファイル概要（役割）
+
+ChartCore は Plotly.js を Next.js のクライアントコンポーネントとして動的ロードするためのラッパー。
+
+• Plotly のコアモジュールを動的 import
+• 必要なチャートタイプ（Scatter / Sunburst / Treemap / ScatterGL）を登録
+• 日本語ロケール（jaLocale）を登録
+• SSR（サーバーサイドレンダリング）を無効化
+• ローディング中は LoadingBar を表示
+• 最終的に Plotly コンポーネントを返す
+
+
+このファイルは Plotly を使う全てのチャートコンポーネントの基盤になる。
+
+---
+
+2. エクスポートされるインタフェース
+
+export const ChartCore: React.ComponentType<PlotParams>;
+
+
+• ChartCore は Plotly.js の React コンポーネントとして利用できる。
+• PlotParams は react-plotly.js が提供する型（data/layout/config などを受け取る）。
+
+
+---
+
+3. 依存関係
+
+依存先	用途	
+LoadingBar	ローディング表示	
+plotly.js/lib/core	Plotly 本体	
+plotly.js/lib/scatter	散布図	
+plotly.js/lib/sunburst	サンバースト	
+plotly.js/lib/treemap	ツリーマップ	
+plotly.js/lib/scattergl	WebGL 散布図（高速）	
+react-plotly.js/factory	Plotly を React コンポーネント化	
+jaLocale	日本語ロケール	
+
+
+---
+
+4. 機能仕様（日本語の擬似コード）
+
+新人が理解しやすいように、
+実際のコードの動きをそのまま日本語で擬似コード化する。
+
+---
+
+📌 擬似コード（詳細）
+
+コンポーネント ChartCore を動的に読み込む。
+
+1. dynamic() を使って、Plotly 関連のモジュールを非同期で読み込む。
+   - SSR（サーバーサイドレンダリング）は無効化する。
+
+2. dynamic の内部で以下を行う：
+
+   (1) Plotly 本体を読み込む
+       import("plotly.js/lib/core")
+
+   (2) 必要なチャートタイプを読み込む
+       - 散布図（scatter）
+       - サンバースト（sunburst）
+       - ツリーマップ（treemap）
+       - WebGL 散布図（scattergl）
+
+   (3) Plotly.register() を使って、読み込んだチャートタイプを Plotly に登録する。
+
+   (4) 日本語ロケール（jaLocale）を Plotly に登録する。
+
+   (5) react-plotly.js の factory 関数を読み込み、
+       createPlotlyComponent(Plotly) を呼び出して
+       React コンポーネント化する。
+
+   (6) その React コンポーネントを返す。
+
+3. dynamic の loading オプションで、
+   読み込み中は LoadingBar を表示する。
+
+4. 最終的に、ChartCore は
+   <ChartCore data={} layout={} config={} />
+   のように使える Plotly コンポーネントとしてエクスポートされる。
+
+
+---
+
+5. 新人向け：このファイルの理解ポイント
+
+✔ Plotly は SSR できない
+
+→ だから dynamic + ssr:false が必須。
+
+✔ 必要なチャートタイプは「手動で register」する
+
+Plotly は軽量化のため、必要なチャートだけ登録する仕組み。
+
+✔ ChartCore は「Plotly の土台」
+
+→ 実際のチャートは別ファイルで作る（例：ScatterPlot.tsx）
+
+✔ LoadingBar は「Plotly の読み込み中」に表示される
+
+→ チャートが重いので UX 改善のため。
+
+---
+
+6. 新人向け：このファイルを使う側のコード例
+
+import { ChartCore } from "@/components/charts/ChartCore";
+
+export function ScatterPlot({ data }) {
+  return (
+    <ChartCore
+      data={[
+        {
+          x: data.map(p => p.x),
+          y: data.map(p => p.y),
+          mode: "markers",
+          type: "scattergl",
+        },
+      ]}
+      layout={{ title: "散布図" }}
+      config={{ responsive: true }}
+    />
+  );
+}
+
+
+---
+
+7. このファイルの責務（まとめ）
+
+• Plotly を Next.js で安全に使うための「初期化コンポーネント」
+• 必要なチャートタイプを登録
+• 日本語ロケールを登録
+• SSR を無効化
+• ローディング表示を提供
+• React コンポーネントとして Plotly を返す
+
+
+---
+
+📣 次のファイルも貼ってください
+
+この形式で 全ファイル分の仕様書を作成していく。
+
+• インタフェース
+• 機能仕様（日本語擬似コード）
+• 新人向けの理解ポイント
+• 使用例
+• 責務まとめ
+
+
+すべて統一フォーマットで作るので、
+次のファイルを貼ってください。
