@@ -266,3 +266,138 @@ buttonRecipe に定義された variant / size が自動で適用される。
 このディレクトリには他にも UI 基盤コンポーネントがあるはずなので、
 続けて貼ってくれれば同じ形式で仕様書化するよ。
 
+GROHMANN、受け取ったよ。
+この Checkbox コンポーネントは短いけれど、Chakra UI の Compound Component（Root / Control / HiddenInput / Label）を正しくラップし、型安全に拡張しているという点で、とても良い設計になっている。
+
+以下に、いつもの形式で ファイル単位の仕様書をまとめる。
+
+---
+
+📘 ファイル仕様書：components/ui/Checkbox.tsx
+
+1. ファイル概要
+
+このコンポーネントは、
+Chakra UI の Checkbox をラップし、アイコン差し替え・inputProps・rootRef を追加した拡張版 Checkbox。
+
+主な目的：
+
+• ChakraCheckbox の構造（Root / HiddenInput / Control / Label）をそのまま利用
+• 独自のアイコン（indicator）を差し替え可能にする
+• inputProps を HiddenInput に渡せるようにする
+• rootRef と ref（inputRef）を分離して扱えるようにする
+
+
+UI デザインシステムの中で、柔軟性の高い Checkbox として機能する。
+
+---
+
+2. Props インタフェース
+
+export interface CheckboxProps extends ChakraCheckbox.RootProps {
+  icon?: React.ReactNode; // チェックマーク部分を差し替える
+  inputProps?: React.InputHTMLAttributes<HTMLInputElement>; // HiddenInput に渡す props
+  rootRef?: React.Ref<HTMLLabelElement>; // Root（label）への ref
+}
+
+
+特徴：
+
+• ChakraCheckbox.RootProps を継承しているため、
+checked, defaultChecked, onCheckedChange, disabled など標準 props が使える
+• ref は input 要素（HiddenInput）に対して forwardRef
+• rootRef は label（Root）に対して ref
+
+
+ref の扱いが明確に分離されているのがポイント。
+
+---
+
+3. 依存関係
+
+依存先	用途	
+Chakra UI Checkbox	ベースとなる Compound Component	
+React.forwardRef	inputRef の透過	
+ReactNode	icon 差し替え	
+inputProps	HiddenInput の追加属性	
+
+
+---
+
+4. 機能仕様（擬似コード）
+
+このコンポーネントの動作を 日本語の擬似コードで表現するとこうなる。
+
+---
+
+4.1 props の分解
+
+icon, children, inputProps, rootRef, ...rest を取り出す
+
+
+---
+
+4.2 構造のレンダリング
+
+<ChakraCheckbox.Root ref={rootRef} {...rest}>
+
+  <ChakraCheckbox.HiddenInput ref={ref} {...inputProps} />
+
+  <ChakraCheckbox.Control>
+      icon が指定されていれば icon
+      なければ <ChakraCheckbox.Indicator />
+  </ChakraCheckbox.Control>
+
+  children があれば:
+      <ChakraCheckbox.Label>{children}</ChakraCheckbox.Label>
+
+</ChakraCheckbox.Root>
+
+
+---
+
+4.3 ref の扱い
+
+• ref → HiddenInput（実際の input 要素）
+• rootRef → Root（label 要素）
+
+
+Chakra UI の Compound Component では、
+Root が label、HiddenInput が input という構造になっているため、
+ref を分離する設計は非常に合理的。
+
+---
+
+5. 責務まとめ
+
+Checkbox.tsx の責務は以下の通り：
+
+• Chakra UI の Checkbox をラップし、プロジェクト共通の Checkbox として提供する
+• アイコン差し替え（indicator のカスタマイズ）
+• HiddenInput に inputProps を渡せるようにする
+• Root と HiddenInput の ref を分離して扱えるようにする
+• children を Label として扱う
+
+
+UI デザインシステムの基盤となる「拡張 Checkbox」コンポーネント。
+
+---
+
+6. 使用例
+
+<Checkbox
+  checked={value}
+  onCheckedChange={setValue}
+  icon={<CustomCheckIcon />}
+  inputProps={{ id: "agree" }}
+>
+  利用規約に同意する
+</Checkbox>
+
+
+---
+
+📦 components/ui/* の次のファイルを貼ってください
+
+このディレクトリにはまだ他の UI 基盤コンポーネントがあるはずなので、
+続けて貼ってくれれば同じ形式で仕様書化するよ。
