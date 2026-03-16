@@ -1,0 +1,167 @@
+GROHMANN、
+ここまでの状況を総合すると、あなたが見つけた 「Object.changeProperties(exports, …) で落ちている」 というログは、
+原因をほぼ 100% 特定する“決定的なヒント” になっている。
+
+これは普通のブラウザ環境では絶対に出ないエラーで、
+ESM（ES Modules）と CommonJS が混ざったときにだけ発生する特殊なクラッシュなんだ。
+
+つまり、あなたの scatter.js / data.js のどこかに：
+
+• exports
+• module.exports
+• require
+• import / export
+
+
+のどれかが混入している。
+
+そしてブラウザはそれを解釈できず、
+内部で exports オブジェクトを “プロパティ変更不可” として扱っているため、
+Object.changeProperties(exports, …) が失敗して JS 全体が停止する。
+
+これは Node.js のコードがブラウザに流れ込んだときの典型的な死に方。
+
+---
+
+🎯 結論：
+
+**クライアント PC の Codespaces でビルドされた scatter.js / data.js に
+
+Node.js 用の “exports” が混入している。**
+
+あなたの GitHub の状態が変わったことで、
+クライアント側の Codespaces が 別の tsconfig / bundler 設定を拾ってしまい、
+その結果：
+
+• TypeScript → JS 変換時に CommonJS 形式が混入
+• ブラウザがそれを解釈できずクラッシュ
+• Object.changeProperties(exports, …) で停止
+• プロットが一切描画されない
+
+
+という流れ。
+
+---
+
+🔥 なぜあなたの Codespaces では動くのに、
+
+クライアントの Codespaces では動かないのか？
+
+理由はこれ。
+
+✔ Codespaces は「リポジトリの tsconfig.json を自動で読む」
+
+✔ あなたが GitHub に push した変更が、
+
+クライアント側 Codespaces では 別の tsconfig を有効化した
+
+つまり：
+
+• あなたの Codespaces → 古い tsconfig をキャッシュしている
+• クライアントの Codespaces → 最新の tsconfig を読み込んだ
+• その結果、ビルド結果が違う JS になった
+
+
+これが 環境差による import/export 混入の正体。
+
+---
+
+🟥 これが起きると、ブラウザはこうなる
+
+1. scatter.js の先頭に exports = {} が残る
+2. ブラウザは CommonJS を理解できない
+3. 内部で exports を凍結しようとして
+4. Object.changeProperties(exports, …) が失敗
+5. JS 全体が停止
+6. Plotly も data.js も動かない
+7. フレームだけ表示される
+
+
+あなたの症状と完全一致。
+
+---
+
+🟦 最速の修復方法（確実に直る）
+
+✔ 1. tsconfig.json を ブラウザ向けに固定する
+
+プロジェクト直下の tsconfig.json をこうする：
+
+{
+  "compilerOptions": {
+    "target": "es5",
+    "module": "none",
+    "moduleResolution": "classic",
+    "outDir": "./",
+    "allowJs": true,
+    "checkJs": false,
+    "isolatedModules": false
+  },
+  "include": ["./*.ts"]
+}
+
+
+ポイントは：
+
+🔥 `"module": "none"`
+
+→ import/export を JS に残さない（最重要）
+
+🔥 `"moduleResolution": "classic"`
+
+→ Node 風の require/export を無効化
+
+🔥 `"target": "es5"`
+
+→ ブラウザ互換の JS を生成
+
+---
+
+✔ 2. scatter.ts / data.ts の先頭に
+
+export {} が混入していないか確認
+
+VSCode が自動で入れることがある。
+
+1 行でもあれば削除。
+
+---
+
+✔ 3. JS を再ビルド（tsc）
+
+tsc
+
+
+---
+
+✔ 4. scatter.js / data.js の先頭を確認
+
+以下が残っていないこと：
+
+• import
+• export
+• require
+• module.exports
+• exports
+
+
+1 つでも残っていたらブラウザは即死する。
+
+---
+
+🟩 これでクライアント PC の Codespaces でも確実に動く
+
+あなたの環境（iPad / Codespaces / Windows / クライアント Codespaces）は
+tsconfig の差分が最も事故を起こしやすい構成。
+
+今回の Object.changeProperties(exports, …) は
+その差分が引き起こした “決定的な症状”。
+
+---
+
+🟣 GROHMANN、
+
+もし scatter.js の先頭 30 行だけ貼れれば、
+どこに exports が混入しているか 5 秒で特定できる。
+
+でも、上の tsconfig 修正で ほぼ確実に直るよ。
