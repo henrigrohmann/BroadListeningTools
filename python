@@ -1,1 +1,400 @@
 
+
+必ず “ローカル HTTP サーバー経由” で index.html を開くこと。
+
+ここでは 最も確実で、あなたのデモ環境に最適な方法を順番に示すね。
+どれも iPad / Codespaces / Windows VSCode の三環境を行き来するあなたにとって、
+安定して再現性のある方法だけを選んでいる。
+
+---
+
+🔥 結論：
+
+**Windows VSCode では “file://” で開くと JS は動かない。
+
+必ず “http://localhost:xxxx” で開く必要がある。**
+
+---
+
+🟦 方法①：VSCode の Live Server を使う（最も簡単・推奨）
+
+1. VSCode の拡張機能で Live Server をインストール
+
+（Ritwick Dey のやつ）
+
+2. index.html を右クリック → Open with Live Server
+
+すると自動で：
+
+http://127.0.0.1:5500/index.html
+
+
+のような URL が開く。
+
+✔ JS が確実に動く
+
+✔ 相対パスも正しく解決される
+
+✔ MIME タイプも正しくなる
+
+✔ Windows のセキュリティ制限を回避できる
+
+あなたの症状（フレームだけ出て JS が動かない）は
+file:// で開いているときの典型例だから、
+Live Server で 100% 解決する。
+
+---
+
+🟩 方法②：VSCode の Simple Browser を使う（Live Server 不要）
+
+VSCode のコマンドパレットで：
+
+> Simple Browser: Show
+
+
+URL に：
+
+http://localhost:8000
+
+
+などを入れる。
+
+ただし、Simple Browser は file:// を許可しないので、
+別途ローカルサーバーが必要。
+
+---
+
+🟧 方法③：Python の簡易サーバーを使う（あなたの環境に最適）
+
+あなたは Codespaces で python3 -m http.server を使っていたよね。
+Windows でも同じ方法が使える。
+
+1. プロジェクトのルートで：
+
+python -m http.server 8000
+
+
+2. ブラウザで：
+
+http://localhost:8000
+
+
+✔ これも確実に動く
+
+✔ Live Server が不要
+
+✔ Codespaces と同じ動作になる
+
+あなたの開発スタイルに最も近い。
+
+---
+
+🟨 方法④：Node.js の http-server を使う（安定性が高い）
+
+npm install -g http-server
+http-server .
+
+
+ブラウザで：
+
+http://localhost:8080
+
+
+---
+
+🟪 どれを選ぶべきか（あなたの場合）
+
+あなたの環境は：
+
+• iPad + Codespaces
+• Windows VSCode
+• Python サーバーに慣れている
+• デモをクライアント PC で動かす必要がある
+
+
+なので 方法③（python -m http.server） が最も安定して再現性が高い。
+
+---
+
+🟦 まとめ：
+
+**Windows で JS が動かない原因は file:// で開いているから。
+
+必ずローカル HTTP サーバー経由で開くこと。**
+
+---
+
+🟣 もしよければ、次のステップとして：
+
+• Windows のブラウザで DevTools → Network → scatter.js が 200 になっているか
+• MIME タイプが application/javascript になっているか
+
+
+を確認すれば、完全に原因が特定できる。
+
+---
+
+
+---
+
+🟦 Windows VSCode でローカルサーバーを立てる最もシンプルな方法
+
+✔ 1. プロジェクトのルートに移動
+
+（index.html があるディレクトリ）
+
+cd path/to/project
+
+
+✔ 2. Python の簡易サーバーを起動
+
+python -m http.server 8000
+
+
+※ Windows でも Python が入っていればそのまま動く
+（入ってなければ Microsoft Store から一発で入る）
+
+✔ 3. ブラウザでアクセス
+
+http://localhost:8000
+
+
+これで file:// 問題は完全に解消される。
+JS が確実に動くし、Plotly も正常にロードされる。
+
+---
+
+🟩 なぜこれが Mac/Linux 使いに最適なのか
+
+• コマンドが Mac/Linux と完全に同じ
+• Live Server のような VSCode 依存がない
+• Windows の file:// セキュリティ制限を回避
+• MIME タイプが正しく設定される
+• 相対パスの挙動が安定する
+• Codespaces と同じ動作になる（←これが大きい）
+
+
+あなたの開発環境は：
+
+• iPad（Safari）
+• Codespaces（Linux）
+• Windows VSCode（デモ用）
+
+
+という 3 つの OS を跨ぐ特殊な構成だから、
+「どこでも同じコマンドで動く」ことが最重要。
+
+python -m http.server はその点で最強。
+
+---
+
+🟧 もし Windows で Python が入っていなければ
+
+PowerShell でも同じことができる。
+
+Start-Process powershell -ArgumentList "python -m http.server 8000"
+
+
+または Node.js があれば：
+
+npx http-server .
+
+
+でも、あなたのスタイルなら Python が一番しっくりくる。
+
+---
+
+🟪 これで Windows のデモ環境は安定する
+
+散布図デモは：
+
+• index.html
+• data.js
+• scatter.js
+
+
+の 3 つが正しくロードされれば動くので、
+http://localhost:8000 で開けば確実に動く。
+
+---
+
+🟦 次のステップ（今晩の Codespaces 作業）
+
+あなたの計画はこうだったね：
+
+1. data.ts をバックエンド API として整備
+2. CSV → JSON → DB のパイプラインを作る
+3. scatter.ts / treemap.ts を描画専用にする
+4. density（濃い意見）計算を data.ts に追加
+5. treemap の実装に入る
+
+
+今晩は data.ts の強化に集中できるはず。
+
+---
+
+
+---
+
+🎯 **結論：Windows の Python サーバーが scatter.js / data.js を
+
+「JavaScript として扱っていない」可能性が高い**
+
+つまり：
+
+• ファイルは存在する
+• パスも正しい
+• 404 ではない
+• でも JS として実行されていない
+
+
+という状態。
+
+これは Windows の Python サーバーが MIME タイプを誤認しているときに起きる。
+
+---
+
+🔥 **最も起きやすい原因：
+
+scatter.js / data.js が “UTF-8 BOM 付き” になっている**
+
+Windows の VSCode で保存すると、
+UTF-8 with BOM になることがある。
+
+BOM が付くと：
+
+• ブラウザは JS の先頭に「不可視文字」があると判断
+• その結果、JS のパースが即死
+• でもエラーは画面に出ない
+• HTML フレームだけ表示される
+
+
+という、まさにあなたの症状になる。
+
+Codespaces では BOM が付かないので動く。
+Windows VSCode で保存すると BOM が付くので動かない。
+
+これは 超典型的な罠。
+
+---
+
+🟦 確認方法（最速）
+
+VSCode の右下の文字コード表示を見てほしい。
+
+右下に：
+
+UTF-8 with BOM
+
+
+と出ていたら 完全にこれが原因。
+
+---
+
+🟩 解決方法（3 秒）
+
+VSCode の右下の文字コードをクリックして：
+
+UTF-8 に再保存
+
+
+を選ぶだけ。
+
+これで BOM が消える。
+
+---
+
+🟧 **もう一つの可能性：
+
+Python サーバーが .js を text/plain として返している**
+
+これも Windows で起きることがある。
+
+確認方法：
+
+1. ブラウザで F12 → Network
+2. scatter.js をクリック
+3. Headers → Content-Type を見る
+
+
+❌ text/plain
+
+→ JS として実行されない
+
+✔ application/javascript
+
+→ 正常
+
+もし text/plain になっていたら、
+Windows の Python が MIME を誤認している。
+
+---
+
+🟪 その場合の解決策
+
+① Python 3.11 以降にアップデート
+
+（MIME 周りが改善されている）
+
+② または、拡張子を .mjs に変える
+
+（ブラウザが強制的に JS として扱う）
+
+③ または、簡易サーバーを Node.js に切り替える
+
+npx http-server .
+
+
+---
+
+🟦 GROHMANN の症状と一致するポイント
+
+あなたの症状：
+
+• Codespaces では動く
+• Windows では動かない
+• フレームだけ表示される
+• JS が一切動かない
+• scatter.js / data.js は同じ階層にある
+• パスの問題ではない
+
+
+これは BOM か MIME のどちらかしかない。
+
+---
+
+🟣 最も可能性が高いのは BOM
+
+あなたは：
+
+• Windows VSCode に落として
+• トランスパイルして
+• scatter.ts に ts-nocheck を付けて
+• 保存した
+
+
+この「保存」のタイミングで
+UTF-8 with BOM になることが本当に多い。
+
+そして BOM が付くと：
+
+• JS が silent failure
+• HTML は表示される
+• 何も動かない
+
+
+まさに今の症状。
+
+---
+
+🟩 **GROHMANN、まずは scatter.js と data.js の文字コードを確認してみて。
+
+UTF-8 with BOM なら、それが原因だよ。**
+
+もし BOM じゃなかったら、
+次に Network → Content-Type を見れば 100% 原因が特定できる。
+
+どちらにせよ、
+あなたの環境なら 5 分以内に完全復旧できる。
+
+続報を待ってるよ。
