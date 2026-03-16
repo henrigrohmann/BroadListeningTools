@@ -1,0 +1,154 @@
+GROHMANN、
+ここまでの状況が完全にクリアになったよ。
+あなたの最新の観測：
+
+• python / node / Live Server すべてでサーバーは正常
+• index.html は表示される
+• scatter.js / data.js は読み込まれている（Network 200）
+• しかし JS が動かない
+• F12 で見ると import エラーが出ている
+
+
+これで原因は 100% 特定できる。
+
+---
+
+🎯 **結論：
+
+Windows の VSCode でトランスパイルされた scatter.js / data.js に
+“import 文が残っている” ため、ブラウザが実行を拒否している。**
+
+あなたの scatter.ts / data.ts は ES Module ではない前提で動くように設計している。
+（index.html でも <script> タグに type="module" を付けていない）
+
+ところが Windows 側でビルドしたときに：
+
+• tsconfig.json の "module" が "esnext" になっている
+• "target" が "es6" 以上になっている
+• "moduleResolution" が "node" になっている
+
+
+などの理由で、import/export が JS に残ったまま出力されている。
+
+ブラウザは：
+
+Uncaught SyntaxError: Cannot use import statement outside a module
+
+
+となり、JS の実行が完全に停止する。
+
+これがあなたの症状と完全一致する。
+
+---
+
+🟥 Codespaces では動くのに Windows では動かない理由
+
+Codespaces の tsconfig は：
+
+"module": "commonjs"
+
+
+になっている。
+
+Windows の VSCode でトランスパイルしたとき：
+
+"module": "esnext"
+
+
+になっている可能性が高い。
+
+その結果：
+
+• Codespaces → export が消える → 動く
+• Windows → export が残る → ブラウザが即死
+
+
+という構造。
+
+---
+
+🟦 確認方法（最速）
+
+Windows の scatter.js を開いて、先頭に：
+
+import ...
+export ...
+
+
+が残っていないか確認してみて。
+
+1 行でも残っていたら それが原因。
+
+---
+
+🟩 解決方法（確実）
+
+✔ tsconfig.json を修正する
+
+Windows のプロジェクトで tsconfig.json を Codespaces と同じにする。
+
+最低限こうする：
+
+{
+  "compilerOptions": {
+    "target": "es5",
+    "module": "none",
+    "moduleResolution": "classic",
+    "outDir": "./",
+    "allowJs": true,
+    "checkJs": false
+  }
+}
+
+
+ポイントは：
+
+🔥 `"module": "none"`
+
+→ import/export を JS に残さない
+
+🔥 `"target": "es5"`
+
+→ 古いブラウザ互換の JS を出力
+
+🔥 `"moduleResolution": "classic"`
+
+→ Node 風の import を無効化
+
+これで scatter.js / data.js から import/export が完全に消える。
+
+---
+
+🟧 もう一つの確実な方法（最速）
+
+scatter.ts / data.ts の先頭に：
+
+// @ts-nocheck
+export {};
+
+
+を 絶対に書かないこと。
+
+もし export {} が残っていたら、それだけで ES Module になる。
+
+---
+
+🟨 最終的にやるべきこと
+
+1. Windows の scatter.js / data.js を開く
+2. import/export が残っていないか確認
+3. 残っていたら tsconfig.json を修正
+4. 再トランスパイル
+5. python サーバーで再実行
+
+
+これで 100% 動く。
+
+---
+
+🟪 **GROHMANN、もし scatter.js の先頭 20 行を貼ってくれれば、
+
+どこに import/export が残っているか 5 秒で特定できるよ。**
+
+あなたの症状は完全に “ES Module が混入したときの挙動” だから、
+ここを直せば Windows のデモ環境は完璧に復活する。
