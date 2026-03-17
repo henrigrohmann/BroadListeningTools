@@ -1,22 +1,28 @@
-return {"signature": "OK-12345", "data": [...]}
+了解した、GROHMANN。
+“クライアント PC で最小散布図が描画できるかどうかを確認するための、完全動作するテスト用ファイル一式” をここにまとめて送るよ。
 
-了解、GROHMANN。
-「クライアント PC がまだ使えるうちに、最小データで scatter.ts が描画できるかだけ確認したい」
-これは本当に重要なテストだよ。
-企業 PC のセキュリティ層が Plotly の WebGL や JS 実行順序に干渉していないかを、最小構成で確かめるのが最も安全。
+あなたが今すぐコピペして動かせるように、
+index.html / data.js / scatter.js / server.py
+の 4 ファイルを “最小構成・依存ゼロ” で用意した。
 
-ここでは、あなたが 今すぐコピペして動かせる
-“最小 3 点の散布図テストコード” を提示する。
-
-• FastAPI → data.ts → scatter.ts → index.html
-• すべて今の構成のまま動く
-• 企業 PC のセキュリティ層の干渉を最小化
-• WebGL も Canvas も自動で Plotly が選択
-
+これで企業 PC のセキュリティ層が Plotly や JS に干渉していないかを、
+一発で確認できる。
 
 ---
 
-🟦 ① FastAPI（/scatter_test）— 最小 3 点データ
+🟦 1. server.py（FastAPI：3点データ返すだけ）
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/scatter_test")
 def scatter_test():
@@ -29,36 +35,32 @@ def scatter_test():
     }
 
 
-✔ 企業 PC でも JSON は安全
+起動：
 
-✔ WebGL の負荷ゼロ
+uvicorn server:app --reload --host 0.0.0.0 --port 8001
 
-✔ scatter.ts にそのまま渡せる構造
 
 ---
 
-🟩 ② data.ts（ラッパー）— API を叩くだけ
+🟩 2. data.js（API ラッパー：fetch するだけ）
 
 // @ts-nocheck
+console.log("data.js loaded");
+
 window.api = {
   async getScatterTest() {
-    const res = await fetch("http://localhost:8001/scatter_test");
+    const url = "http://localhost:8001/scatter_test";
+    const res = await fetch(url);
     return res.json();
   }
 };
 
 
-✔ import/export なし
-
-✔ CommonJS 誤判定なし
-
-✔ セキュリティ層の干渉を最小化
-
 ---
 
-🟧 ③ scatter.ts — 最小描画関数（既存 scatter.ts と共存可能）
+🟧 3. scatter.js（最小 3 点散布図描画）
 
-あなたの scatter.ts に追加するだけでいい。
+console.log("scatter.js loaded");
 
 window.buildScatterTestPlot = function(data) {
   const xs = data.points.map(p => p.x);
@@ -71,7 +73,7 @@ window.buildScatterTestPlot = function(data) {
     text: labels,
     mode: "markers+text",
     textposition: "top center",
-    type: "scatter"
+    type: "scatter"   // WebGL を使わない → 企業PCでも安全
   };
 
   const layout = {
@@ -84,49 +86,56 @@ window.buildScatterTestPlot = function(data) {
 };
 
 
-✔ WebGL 不使用（type: “scatter”）
-
-→ 企業 PC の WebGL 制限を完全回避
-
-✔ 3 点なので負荷ゼロ
-
-✔ Plotly の基本機能だけで描画
-
 ---
 
-🟨 ④ index.html — ボタンから呼び出す
+🟨 4. index.html（ボタン → API → 描画の通し動作）
 
-<button onclick="runScatterTest()">Scatter Test</button>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>Scatter Test</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    #plot { width: 600px; height: 400px; border: 1px solid #ccc; }
+    button { padding: 10px 20px; font-size: 14px; }
+  </style>
+</head>
 
-<script>
-async function runScatterTest() {
-  const data = await window.api.getScatterTest();
-  window.buildScatterTestPlot(data);
-}
-</script>
+<body>
+  <h2>Scatter Test</h2>
 
+  <button onclick="runScatterTest()">Run Scatter Test</button>
 
-✔ デバッグパネル不要
+  <div id="plot"></div>
 
-✔ 企業 PC の JS 書き換えの影響を最小化
+  <script src="data.js"></script>
+  <script src="scatter.js"></script>
 
-✔ クリック一発で描画
+  <script>
+    async function runScatterTest() {
+      console.log("Requesting scatter test data...");
+      const data = await window.api.getScatterTest();
+      console.log("Data received:", data);
+      window.buildScatterTestPlot(data);
+    }
+  </script>
+</body>
+</html>
+
 
 ---
 
 🟪 これで確認できること
 
-✔ Plotly が企業 PC で正常に動くか
+• Plotly が企業 PC で正常動作するか
+• WebGL がブロックされていないか（今回は非 WebGL）
+• data.js → scatter.js の連携が正常か
+• JS の実行順序が壊れていないか
+• API → data.js → scatter.js のパイプラインが通るか
+• セキュリティ層が JSON を書き換えていないか
 
-✔ WebGL がブロックされていないか
-
-✔ JS の実行順序が壊れていないか
-
-✔ data.js → scatter.js の連携が正常か
-
-✔ API → data.ts → scatter.ts のパイプラインが通るか
-
-✔ セキュリティ層が JSON を書き換えていないか
 
 つまり、GraphTools の最小構成が企業 PC で動くかどうかを
 一発で確認できる。
@@ -135,16 +144,17 @@ async function runScatterTest() {
 
 🌟 GROHMANN、
 
-このテストは “今この瞬間” のクライアント PC でしかできない貴重な検証だよ。
-この 3 点散布図が描画できれば、
-本番の 30 点データも確実に動く。
+この 4 ファイルを同じディレクトリに置いて、
 
-必要なら、次は：
+• Live Server（5500 など）で index.html
+• FastAPI（8001）で server.py
+を動かせば、すぐにテストできる。
 
-• WebGL 強制版
+
+必要なら、次は
+
+• WebGL 版
 • scattergl 版
 • 30 点版
 • hover/click イベント版
-
-
-もすぐに出せる。
+もすぐに作るよ。
