@@ -1,270 +1,346 @@
+いいね、GROHMANN。
+ここからは 「公聴AIのバックエンド構造そのもの」 に踏み込むフェーズだね。
+あなたが言う server / pipeline / plugin の三層構造 は、まさに akasha / contexa / jataka の思想そのもの。
+この分割を入れると、後からいくらでも拡張できる“本物のパイプライン”になる。
+
+ここではまず 最小構成の三分割アーキテクチャ を提示する。
+この段階ではまだ「なんちゃって同期処理」だけど、
+構造としては 非同期ジョブキューにもそのまま拡張できる。
+
+---
+
+🟦 全体像（あなたの意図を完全に反映した三層構造）
+
+server.py     → API受付だけ。処理は pipeline に投げる。
+pipeline.py   → 処理の流れを管理。plugin を順次呼び出す。
+plugins/
+   ├── loader_csv.py        → CSV読み込み
+   ├── vectorizer_simple.py → summary/fullOpinion → ベクトル化
+   ├── cluster_kmeans.py    → なんちゃってk-means
+   ├── layout_scatter.py    → 座標生成
+   └── writer_db.py         → DB書き込み
+
+
+この構造のメリット：
+
+• server は 薄い（FastAPI のルーターだけ）
+• pipeline は スケジューラ（処理の順番だけ管理）
+• plugin は 処理の実体（I/O・クラスタリング・座標生成など）
+• plugin を差し替えるだけで、• TF-IDF
+• sentence-transformers
+• HDBSCAN
+• UMAP
+などに進化できる
+
+
+
+あなたの OSS エコシステムの「戦略パターン」「差し替え可能性」を完全に再現している。
+
+---
+
+🟦 まずはディレクトリ構造を作る
+
+backend/
+  server.py
+  pipeline.py
+  plugins/
+      __init__.py
+      loader_csv.py
+      vectorizer_simple.py
+      cluster_kmeans.py
+      layout_scatter.py
+      writer_db.py
+  data30.csv
+  data.db（初回実行で生成）
 
 
 ---
 
-📘 公聴AI（public‑viewer）
+🟦 server.py（API受付だけにする）
 
-「画面状態遷移 × コーディング詳細仕様書」
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
-この仕様書は、以下の目的で作られている：
+from pipeline import run_pipeline, load_scatter_data
 
-• 画面単体ではなく、画面間のつながりを理解させる
-• 遷移時にどの hooks が再評価されるかを明示
-• URL パラメータの流れを理解させる
-• 状態を持つべき場所／持ってはいけない場所を明確化
-• 迷わずコーディングできるように、遷移ごとにコード例を提示
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/init")
+def init():
+    """CSV → plugin → DB のパイプライン実行"""
+    logs = run_pipeline()
+    return {"status": "ok", "logs": logs}
+
+@app.get("/scatter")
+def scatter():
+    """DB → scatter 用データを返す"""
+    return load_scatter_data()
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+server.py は API の受付だけ。
+処理は一切しない。
+あなたの意図どおり。
+
+---
+
+🟦 pipeline.py（処理の順番だけ管理する）
+
+import time
+from plugins.loader_csv import load_csv
+from plugins.vectorizer_simple import vectorize
+from plugins.cluster_kmeans import run_kmeans
+from plugins.layout_scatter import assign_xy
+from plugins.writer_db import write_db, read_scatter
+
+def run_pipeline():
+    logs = []
+
+    def log(msg):
+        logs.append(f"[{time.strftime('%H:%M:%S')}] {msg}")
+
+    log("Pipeline start")
+
+    rows = load_csv()
+    log(f"Loaded CSV: {len(rows)} rows")
+
+    vectors = vectorize(rows)
+    log("Vectorized")
+
+    labels = run_kmeans(vectors, k=3)
+    log("Clustered")
+
+    xy = assign_xy(labels)
+    log("XY assigned")
+
+    write_db(rows, labels, xy)
+    log("DB written")
+
+    log("Pipeline finished")
+    return logs
+
+def load_scatter_data():
+    return read_scatter()
+
+
+pipeline は 処理の順番だけを管理する。
+実体は plugin に丸投げ。
+
+---
+
+🟦 plugins（処理の実体）
+
+以下はすべて 最小構成の実装。
+あなたが後で差し替えられるように、
+あえてシンプルで読みやすくしてある。
+
+---
+
+plugins/loader_csv.py
+
+import csv
+
+CSV_PATH = "data30.csv"
+
+def load_csv():
+    rows = []
+    with open(CSV_PATH, encoding="utf-8") as f:
+        reader = csv.reader(f)
+        next(reader)
+        for row in reader:
+            id_, cluster_id, x, y, summary, *rest = row
+            fullOpinion = ",".join(rest)
+            rows.append((id_, summary, fullOpinion))
+    return rows
 
 
 ---
 
-🧭 0. 公聴AIの「画面状態遷移」の基本原則
+plugins/vectorizer_simple.py
 
-新人がまず理解すべきはこれ。
+def text_to_vector(text):
+    length = len(text)
+    num_punct = sum(1 for c in text if c in "。、.,!?！？")
+    num_hira = sum(1 for c in text if "ぁ" <= c <= "ん")
+    num_kata = sum(1 for c in text if "ァ" <= c <= "ン")
+    num_digit = sum(1 for c in text if c.isdigit())
 
----
+    return [
+        length / 500,
+        num_punct / 50,
+        num_hira / max(1, length),
+        num_kata / max(1, length),
+        num_digit / max(1, length)
+    ]
 
-✔ 1. 状態は「画面」ではなく「URL」が持つ
-
-Next.js App Router では、
-画面の状態は URL パラメータで表現する。
-
-例：
-
-• /reports/123 → reportId = “123”
-• /clusters/45 → clusterId = “45”
-• /sections/9 → sectionId = “9”
-
-
----
-
-✔ 2. 画面遷移すると hooks は「必ず再評価」される
-
-例：
-ReportPage → ClusterDetailPage
-
-useReport → 破棄
-useClusters → 破棄
-useClusterDetail → 新規評価
+def vectorize(rows):
+    return [text_to_vector(s + f) for (_, s, f) in rows]
 
 
 ---
 
-✔ 3. UI コンポーネントは状態を持たない
+plugins/cluster_kmeans.py
 
-状態は hooks が持つ。
-UI は props を受け取って描画するだけ。
+import random
 
----
+def run_kmeans(vectors, k=3, iterations=3):
+    centers = random.sample(vectors, k)
 
-✔ 4. 画面遷移は Link または router.push を使う
+    for _ in range(iterations):
+        clusters = [[] for _ in range(k)]
 
-例：
+        for v in vectors:
+            dists = [sum((v[i] - c[i])**2 for i in range(len(v))) for c in centers]
+            idx = dists.index(min(dists))
+            clusters[idx].append(v)
 
-<Link href={`/clusters/${cluster.cluster_id}`}>詳細</Link>
+        new_centers = []
+        for group in clusters:
+            if not group:
+                new_centers.append(random.choice(vectors))
+            else:
+                dim = len(group[0])
+                new_centers.append([
+                    sum(v[i] for v in group) / len(group)
+                    for i in range(dim)
+                ])
+        centers = new_centers
 
+    labels = []
+    for v in vectors:
+        dists = [sum((v[i] - c[i])**2 for i in range(len(v))) for c in centers]
+        labels.append(dists.index(min(dists)))
 
----
-
-✔ 5. 画面遷移図は「状態遷移図」と同じ意味を持つ
-
-つまり、
-画面遷移図 = 状態遷移図 = hooks の再評価図
-
----
-
-🗺 1. 公聴AI 全画面の「状態遷移図」
-
-新人が迷わないように、
-画面遷移と状態遷移を 1 枚に統合した図を作る。
-
-stateDiagram-v2
-    [*] --> ReportPage
-
-    ReportPage --> ClusterDetailPage: cluster_id を渡す
-    ReportPage --> ChartPage: reportId を渡す
-    ReportPage --> SectionListPage: reportId を渡す
-
-    ClusterDetailPage --> ChartPage: reportId を保持
-    ClusterDetailPage --> CommentDetailPage: commentId を渡す
-
-    SectionListPage --> SectionDetailPage: sectionId を渡す
-
-    SectionDetailPage --> ClusterDetailPage: clusterId を渡す
-
-    CommentDetailPage --> ClusterDetailPage: clusterId を保持
-    CommentDetailPage --> ReportPage: reportId を保持
+    return labels
 
 
 ---
 
-🧩 2. 遷移ごとの「状態の流れ × hooks 再評価表」
+plugins/layout_scatter.py
 
-新人が最も迷うポイントを完全に可視化する。
+import random
 
----
+def assign_xy(labels):
+    xy = []
+    for label in labels:
+        if label == 0:
+            base_x, base_y = -0.5, 0.5
+        elif label == 1:
+            base_x, base_y = 0.5, 0.5
+        else:
+            base_x, base_y = 0.0, -0.5
 
-📄 ReportPage → ClusterDetailPage
-
-項目	内容	
-遷移元	/reports/[id]	
-遷移先	/clusters/[cluster_id]	
-URL パラメータ	cluster_id が新規に決まる	
-再評価される hooks	useClusterDetail(cluster_id) / useComments(cluster_id)	
-破棄される hooks	useReport / useClusters / useSections	
-引き継がれる状態	なし（URL が変わるため）	
-
-
-💡 コーディング例（ClusterCard → ClusterDetailPage）
-
-<Link href={`/clusters/${cluster.cluster_id}`}>
-  詳細を見る
-</Link>
+        x = base_x + random.uniform(-0.2, 0.2)
+        y = base_y + random.uniform(-0.2, 0.2)
+        xy.append((x, y))
+    return xy
 
 
 ---
 
-📄 ClusterDetailPage → ChartPage
+plugins/writer_db.py
 
-項目	内容	
-遷移元	/clusters/[cluster_id]	
-遷移先	/reports/[id]/chart	
-URL パラメータ	reportId を保持	
-再評価される hooks	useChartData(reportId) / useClusters(reportId)	
-破棄される hooks	useClusterDetail / useComments	
+import sqlite3
+import os
 
+DB_PATH = "data.db"
 
-💡 コーディング例
+def write_db(rows, labels, xy):
+    if os.path.exists(DB_PATH):
+        os.remove(DB_PATH)
 
-<Link href={`/reports/${cluster.report_id}/chart`}>
-  グラフを見る
-</Link>
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
 
+    cur.execute("""
+        CREATE TABLE opinions (
+            id TEXT PRIMARY KEY,
+            cluster_id TEXT,
+            x REAL,
+            y REAL,
+            summary TEXT,
+            fullOpinion TEXT
+        )
+    """)
 
----
+    for (id_, summary, fullOpinion), label, (x, y) in zip(rows, labels, xy):
+        cluster_name = ["A", "B", "C"][label]
+        cur.execute("""
+            INSERT INTO opinions (id, cluster_id, x, y, summary, fullOpinion)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (id_, cluster_name, x, y, summary, fullOpinion))
 
-📄 ReportPage → SectionListPage
+    conn.commit()
+    conn.close()
 
-項目	内容	
-遷移元	/reports/[id]	
-遷移先	/reports/[id]/sections	
-URL パラメータ	reportId を引き継ぐ	
-再評価される hooks	useSections(reportId)	
-破棄される hooks	useClusters / useReport（※同じ reportId なら SWR キャッシュが効く）	
+def read_scatter():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT id, cluster_id, x, y, summary, fullOpinion FROM opinions")
+    rows = cur.fetchall()
+    conn.close()
 
-
----
-
-📄 SectionListPage → SectionDetailPage
-
-項目	内容	
-遷移元	/reports/[id]/sections	
-遷移先	/sections/[section_id]	
-URL パラメータ	sectionId が新規に決まる	
-再評価される hooks	useSectionDetail(sectionId)	
-破棄される hooks	useSections	
-
-
----
-
-📄 SectionDetailPage → ClusterDetailPage
-
-項目	内容	
-遷移元	/sections/[section_id]	
-遷移先	/clusters/[cluster_id]	
-URL パラメータ	clusterId が新規に決まる	
-再評価される hooks	useClusterDetail(clusterId)	
-破棄される hooks	useSectionDetail	
-
-
----
-
-🧱 3. 新人向け「画面遷移の実装テンプレート」
-
-新人が迷わないように、
-どの画面でも使える共通テンプレートを用意する。
-
----
-
-📌 画面遷移リンクのテンプレート
-
-<Link href={`/${path}/${id}`}>
-  {label}
-</Link>
+    data = []
+    for r in rows:
+        data.append({
+            "id": r[0],
+            "cluster_id": r[1],
+            "x": r[2],
+            "y": r[3],
+            "summary": r[4],
+            "fullOpinion": r[5]
+        })
+    return {"count": len(data), "data": data}
 
 
 ---
 
-📌 hooks の呼び出しテンプレート
+🟦 これで何が実現したか？
 
-export default function Page({ params }) {
-  const { data } = useHook(params.id);
+✔ server は API 受付だけ
 
-  if (!data) return <Loading />;
+✔ pipeline は処理の順番だけ
 
-  return <UIComponent data={data} />;
-}
+✔ plugin が処理の実体
 
+✔ CSV → ベクトル化 → クラスタリング → 座標生成 → DB
 
----
+✔ /init でパイプライン実行
 
-📌 画面遷移時の「状態の考え方」
+✔ /scatter でフロントにデータ提供
 
-画面遷移 = URL が変わる
-URL が変わる = hooks が再評価される
-hooks が再評価される = 新しいデータが取られる
+✔ ログは pipeline が全部吐く
 
+✔ plugin を差し替えるだけで進化できる
 
-新人はこれを理解すれば迷わない。
+これはもう 公聴AIのバックエンド構造そのもの。
 
----
-
-🎯 4. 新人が迷わない「画面遷移 × コーディング手順」
-
-以下の順番で実装すれば、必ず成功する。
+あなたの OSS エコシステムの思想
+（akasha = orchestration、contexa = pipeline、jataka = plugin）
+が完全に形になった。
 
 ---
 
-① まず URL パラメータを理解する
+🔥 GROHMANN、次はどこを進める？
 
-例：
-/clusters/[cluster_id] → params.cluster_id
-
----
-
-② 次に hooks を呼ぶ
-
-例：
-
-const { cluster } = useClusterDetail(params.cluster_id);
+• plugin をもっと増やす？
+• TF-IDF 風の vectorizer にする？
+• HDBSCAN 風のクラスタリングにする？
+• UMAP 風の座標生成にする？
+• pipeline を非同期化する？
+• ジョブログを DB に保存する？
+• /jobs API を作る？
 
 
----
-
-③ データが揃うまで Loading を出す
-
-if (!cluster) return <Loading />;
-
-
----
-
-④ UI コンポーネントに props を渡す
-
-<ClusterHeader cluster={cluster} />
-
-
----
-
-⑤ 遷移リンクを作る
-
-<Link href={`/reports/${cluster.report_id}/chart`}>グラフへ</Link>
-
-
----
-
-まとめ
-
-• 画面単体の仕様
-• hooks の仕様
-• 画面遷移の仕様
-• 状態の流れ
-• コーディング例
+どれでも行ける。
+あなたの次の一手を聞かせてほしい。
