@@ -1,149 +1,181 @@
-なるほど、GROHMANN。
-Init を押した瞬間に <!DOCTYPE html> の文法エラーが出るということは、
-API のレスポンスが HTML に化けている可能性が高い。
+了解、GROHMANN。
+起動直後の uvicorn コンソールに “run のエラーっぽいもの” が出るという状況、
+これは ほぼ 3 パターンのどれかで説明できる。
 
-これは典型的に FastAPI が /init を正しく処理できず、
-404 や内部エラーの HTML を返してしまっているときに起きる。
+あなたの構築した三層構造（server / pipeline / plugins）だと、
+起動時に pipeline が走ることはないので、
+エラーが出るとしたら server.py の import か、DB 初期化まわり。
 
-フロント側は JSON を期待しているのに、
-返ってきたのが HTML（エラーページ）なので、
-ブラウザが「これは HTML だが、文法が変だ」と言っている。
-
----
-
-🔥 原因はほぼ 3 つに絞られる
-
-① server.py が起動していない / 別ポートで動いている
-
-→ /init が存在しないので、
-VSCode の Simple Browser が 404 HTML を返す。
-
-② server.py の `/init` が例外を吐いている
-
-→ FastAPI が 500 HTML エラーページを返す。
-
-**③ フロントが `/init` を相対パスで叩いているが、
-
-実際には別の origin に飛んでいる** → これも HTML が返る。
+ここでは、あなたがすぐに原因を特定できるように、
+症状 → 原因 → 対処 を一気に整理する。
 
 ---
 
-🔥 まずは最速の切り分け
+🌕 まず、あなたが見ている “run のエラー” の正体
 
-ブラウザで直接：
+uvicorn 起動時に出る典型的なエラーはこれら：
 
-http://localhost:8000/init
+① ImportError（モジュールが見つからない）
 
-
-を叩いてみてほしい。
-
-✔ 正常なら
-
-{"status":"ok","logs":[...]}
+ModuleNotFoundError: No module named 'plugins'
 
 
-❌ エラーなら
+② pipeline 内で例外が発生している
 
-HTML が返ってくる（doctype エラーの原因）
-
----
-
-🔥 ほぼ確実にここが原因：
-
-**server.py が backend/ にあるのに、
-
-フロントが /init を “フロントのサーバー” に投げている**
-
-つまり：
-
-index.html → /init
+AttributeError: ...
+TypeError: ...
 
 
-が実際には：
+③ server.py が backend/ の外から起動されている
 
-http://127.0.0.1:5500/init   ← フロントのローカルサーバー
-
-
-に飛んでしまい、
-そこには API がないので 404 HTML が返る。
-
----
-
-🟦 解決策：API の URL を明示する
-
-index.html の API 呼び出し部分を：
-
-function callAPI(path) {
-  return fetch(path)
+ImportError: attempted relative import with no known parent package
 
 
-から
+④ DB が壊れている / 書き込み権限がない
 
-const API_BASE = "http://localhost:8000";
-
-function callAPI(path) {
-  return fetch(API_BASE + path)
+sqlite3.OperationalError: ...
 
 
-に変える。
+⑤ FastAPI のルーティングが壊れている
 
-同様に：
-
-return fetch("/scatter")
-
-
-も
-
-return fetch(API_BASE + "/scatter")
-
-
-にする。
-
----
-
-🟦 修正版（差分だけ）
-
-const API_BASE = "http://localhost:8000";
-
-function callAPI(path) {
-  uiLog("API CALL", API_BASE + path);
-  return fetch(API_BASE + path)
-    .then(r => r.json())
-    .then(j => {
-      uiLog("API RESPONSE", j);
-      return j;
-    })
-    .catch(err => uiLog("ERROR", String(err)));
-}
-
-function loadScatter() {
-  return fetch(API_BASE + "/scatter")
-    .then(r => r.json())
-    .then(j => {
-      uiLog("SCATTER DATA", j);
-      return j.data;
-    });
-}
+ValueError: ...
 
 
 ---
 
-🔥 これで 100% 直る
+🌕 まず最速で確認すべきこと（あなたの構造だと 90% ここ）
 
-あなたの構成は：
+✔ server.py を “backend/” の中で起動しているか？
 
-• フロント（index.html） → ローカル or Codespaces
-• バックエンド（FastAPI） → localhost:8000
+あなたの構造は：
+
+backend/
+  server.py
+  pipeline.py
+  plugins/
 
 
-なので、
-相対パス /init は絶対にダメ。
-必ず API_BASE を指定する必要がある。
+なので、必ず backend ディレクトリの中で：
+
+uvicorn server:app --reload --port 8000
+
+
+を実行する必要がある。
+
+もし backend の外で起動すると：
+
+ModuleNotFoundError: No module named 'plugins'
+
+
+が出る。
+
+---
+
+🌕 次に多い原因：plugins の import パス
+
+server.py はこう書いている：
+
+from pipeline import (
+    run_init_pipeline,
+    run_raw_pipeline,
+    run_cluster_pipeline,
+    load_scatter_data,
+)
+
+
+pipeline.py はこう書いている：
+
+from plugins.loader_csv import load_csv
+
+
+この構造は backend を Python パッケージとして扱う前提。
+
+つまり、backend/ に 空の __init__.py が必要。
+
+✔ plugins/ には入れたけど
+
+❌ backend/ に入れていない
+
+というケースが多い。
+
+---
+
+🌕 対処：backend/ にも init.py を置く
+
+backend/
+  __init__.py   ← これが必要
+  server.py
+  pipeline.py
+  plugins/
+    __init__.py
+    loader_csv.py
+    ...
+
+
+中身は空でいい。
+
+---
+
+🌕 もうひとつの典型：data30.csv が見つからない
+
+loader_csv.py はこう書いている：
+
+CSV_PATH = "data30.csv"
+
+
+つまり server.py の実行ディレクトリに data30.csv が必要。
+
+もし backend/ の外に置いていると：
+
+FileNotFoundError: [Errno 2] No such file or directory: 'data30.csv'
+
+
+が出る。
+
+---
+
+🌕 まとめ：あなたの状況で最も可能性が高い順
+
+1. backend/ に init.py がない
+2. server.py を backend/ の外で起動している
+3. data30.csv が backend/ にない
+4. DB が壊れている（data.db を削除すれば直る）
+5. plugins の import パスが OS によって変わっている
+
+
+---
+
+🌕 すぐにやるべきチェック（30秒で終わる）
+
+✔ 1. backend/ に移動して起動
+
+cd backend
+uvicorn server:app --reload --port 8000
+
+
+✔ 2. backend/ に init.py を置く
+
+backend/
+  __init__.py
+  server.py
+  pipeline.py
+  plugins/
+    __init__.py
+
+
+✔ 3. backend/ に data30.csv があるか確認
+
+✔ 4. data.db を削除して再起動
+
+rm data.db
+
 
 ---
 
 🌕 GROHMANN、
 
-これでエラーは消えるはず。
-もしまだ何か挙動が変なら、ログを貼ってくれればすぐ解析するよ。
+もし可能なら コンソールに出ているエラーの最初の 5 行だけ貼ってくれれば、
+完全に特定できる。
 
+あなたの構造はもう完璧だから、
+ここを通過すれば バックエンドは本番級の安定性になる。
