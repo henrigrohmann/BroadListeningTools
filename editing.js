@@ -1,31 +1,46 @@
-// Tap the JavaScript button at the top
-// to switch into Preview mode.
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-console.info("Console will show a list of log statements");
-console.warn("but also output uncaught exceptions.");
+from .pipeline import (
+    run_raw_pipeline,
+    run_cluster_pipeline,
+)
+from .writer_db import (
+    read_opinions,
+    TABLE_OPINIONS_RAW,
+    TABLE_OPINIONS_CLUSTERED,
+)
 
-// add text one character at a time to simulate interactive writing
-function typeText(div, message, len) {
-    if(len > message.length) return;
-    
-    div.innerText = message.substr(0, len);
-    setTimeout(function() { typeText(div, message, len + 1); }, 65);
-}
+app = FastAPI()
 
-// hide source code
-var pre = document.getElementsByTagName("pre")[0];
-pre.style.display = "none"
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-// start black & green writer
-document.body.style.backgroundColor = "Black";
-var div = document.createElement("div");
-div.style.whiteSpace = "pre-wrap";
-div.style.color = "#37CC64";
-document.body.appendChild(div);
-typeText(div, "You can use the Javascript Preview mode as a development environment.\n" +
-              "            \n" +
-              "Enable the Console where you switched mode.", 0);
+@app.get("/init")
+def init_db():
+    return {"status": "initialized"}
 
-// tap on exceptions in the log to
-// edit at that spot
-exceptions_like_this();
+@app.get("/raw")
+def raw():
+    run_raw_pipeline()
+    return {"status": "raw pipeline executed"}
+
+@app.get("/cluster")
+def cluster():
+    run_cluster_pipeline()
+    return {"status": "cluster pipeline executed"}
+
+@app.get("/scatter")
+def scatter(mode: str):
+    if mode == "raw":
+        rows = read_opinions(TABLE_OPINIONS_RAW)
+    elif mode == "cluster":
+        rows = read_opinions(TABLE_OPINIONS_CLUSTERED)
+    else:
+        return {"error": "unknown mode"}
+
+    return {"data": rows}
