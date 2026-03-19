@@ -44,3 +44,4 @@ def scatter(mode: str):
         return {"error": "unknown mode"}
 
     return {"data": rows}
+
