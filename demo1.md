@@ -8,9 +8,13 @@ def load_data_csv():
     cur.execute("DELETE FROM scatter_raw")
     seq = 0
 
+    # -----------------------------------------
+    # CSV をテキストとして読み込む（BOM 除去）
+    # -----------------------------------------
     with path.open(encoding="utf-8") as f:
         text = f.read().replace("\ufeff", "").strip()
 
+    # 空行除去
     lines = [line.strip() for line in text.splitlines() if line.strip()]
 
     if len(lines) == 0:
@@ -20,10 +24,12 @@ def load_data_csv():
     # -----------------------------------------
     # ① 1カラム CSV 判定（堅牢版）
     # -----------------------------------------
+    # 判定基準：
+    # ・split(",") しても 1 要素しかない → 区切りとして使われていない
     is_single_column = all(len(line.split(",")) == 1 for line in lines)
 
     if is_single_column:
-        # ★ ヘッダ判定は完全に無効化する
+        # ★ ヘッダ判定は完全に無効化する（全行を本文扱い）
         data_rows = lines
 
         for idx, line in enumerate(data_rows):
@@ -37,12 +43,12 @@ def load_data_csv():
                 (id, x, y, cluster_id, summary, title)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (
-                f"auto-{seq:04d}",
-                None,
-                None,
-                None,
-                full[:30],
-                full
+                f"auto-{seq:04d}",  # id
+                None,               # x
+                None,               # y
+                None,               # cluster_id
+                full[:30],          # summary
+                full                # title (= fullOpinion)
             ))
 
         conn.commit()
