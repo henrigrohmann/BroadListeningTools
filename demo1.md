@@ -9,22 +9,22 @@ def load_data_csv():
     seq = 0
 
     with path.open(encoding="utf-8") as f:
-        text = f.read().strip()
+        text = f.read().replace("\ufeff", "").strip()
 
-    # CSV を行単位で読む
-    rows = [r.strip() for r in text.splitlines() if r.strip()]
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+    if len(lines) == 0:
+        conn.close()
+        return {"loaded": False, "reason": "CSV empty"}
 
     # -----------------------------------------
-    # ① 1カラム CSV（ヘッダなし or ヘッダあり）判定
+    # ① 1カラム CSV 判定（堅牢版）
     # -----------------------------------------
-    # カンマが含まれない → 1カラムとみなす
-    if all("," not in r for r in rows):
-        header_keywords = ["意見", "本文", "full", "text", "opinion"]
-        first = rows[0]
+    is_single_column = all(len(line.split(",")) == 1 for line in lines)
 
-        # ヘッダ判定
-        is_header = any(k in first for k in header_keywords)
-        data_rows = rows[1:] if is_header else rows
+    if is_single_column:
+        # ★ ヘッダ判定は完全に無効化する
+        data_rows = lines
 
         for idx, line in enumerate(data_rows):
             seq += 1
@@ -41,8 +41,8 @@ def load_data_csv():
                 None,
                 None,
                 None,
-                full[:30],   # summary
-                full         # title = fullOpinion
+                full[:30],
+                full
             ))
 
         conn.commit()
