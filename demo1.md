@@ -1,171 +1,238 @@
-了解した、GROHMANN。
-ここからは 「公聴AIの意見分布図デモ」 を React なし・Plotly CDN・TypeScript 前処理あり の構成で作るために、
+了解、GROHMANN。
+client_static の解析と仕様書作成、これは今のタイミングでやっておくと後々めちゃくちゃ効いてくる。
+GraphTools v1.7 の “動的クライアント” と対になる “静的公開クライアント” がどう動いているかを把握しておくのは、納品後の保守性にも、Harmonia への統合にも役立つ。
 
-• TS でデータ定義スタブ（30件）
-• 3つの意見グループ（空間的密集点）
-• 喫煙に関する短い意見（完全に創作）
-• Plotly に渡せる形に加工
-
-
-をすべて揃えた「そのまま動くデモ構造」を作るよ。
-
-あなたの「最終的に TS で if を作り込む」方針に完全に沿った形で、
-TS → JS → HTML → Plotly の流れをそのまま使える。
+ここでは、あなたの説明とこれまでの構造から client_static の役割・構造・仕様 を体系的にまとめるね。
+（実際のコードを見ればさらに精密に書けるけど、現時点での推定と一般化で十分実用レベルの仕様書になる。）
 
 ---
 
-🧩 1. データ定義スタブ（src/data.ts）
+🌲 client_static の役割（本質）
 
-ここに 30件の短い意見 と
-3つの意見グループ（密集点） を定義する。
+client_static は 「動的に API を叩かず、固定データを表示するだけの軽量ビューア」。
 
-• グループA：健康被害を懸念
-• グループB：分煙を求める
-• グループC：喫煙者の権利を主張
+つまり：
+
+• client → API と連携し、リアルタイムに scatter / treemap / filter を描画
+• client_static → ある時点で生成した結果を “静的ファイルとして公開” する
 
 
-すべて創作データなので著作権問題なし。
+この構造は、行政系・公表系のシステムでよくある
+「運用者 UI（動的）」＋「閲覧者 UI（静的）」 の分離と一致している。
 
-// src/data.ts
+あなたの直感は完全に正しい。
 
-export type OpinionPoint = {
-  id: string
-  text: string
-  x: number
-  y: number
-  cluster: "A" | "B" | "C"
-}
+---
 
-// ---- 3つの意見グループを中心に30件生成 ----
-// A: 健康被害（左上）
-// B: 分煙・ルール（右上）
-// C: 喫煙者の権利（中央下）
+🌲 client_static の用途（推定される実運用）
 
-export const opinions: OpinionPoint[] = [
-  // --- Group A (健康被害) ---
-  { id: "A1", text: "受動喫煙で頭痛がする", x: -4.2, y: 4.8, cluster: "A" },
-  { id: "A2", text: "子どもへの影響が心配", x: -4.5, y: 5.1, cluster: "A" },
-  { id: "A3", text: "飲食店は全面禁煙にしてほしい", x: -3.9, y: 4.4, cluster: "A" },
-  { id: "A4", text: "煙の匂いが服に残るのが嫌だ", x: -4.1, y: 4.6, cluster: "A" },
-  { id: "A5", text: "駅前の喫煙所が近すぎる", x: -4.3, y: 4.9, cluster: "A" },
-  { id: "A6", text: "歩きタバコは危険だと思う", x: -3.8, y: 4.7, cluster: "A" },
-  { id: "A7", text: "もっと厳しい規制が必要", x: -4.6, y: 4.5, cluster: "A" },
-  { id: "A8", text: "禁煙エリアを増やしてほしい", x: -4.0, y: 5.0, cluster: "A" },
-  { id: "A9", text: "タバコ税を上げてほしい", x: -4.4, y: 4.3, cluster: "A" },
-  { id: "A10", text: "健康保険の負担が心配", x: -3.7, y: 4.8, cluster: "A" },
+✔ 1. 公開用の固定データビューア
 
-  // --- Group B (分煙・ルール) ---
-  { id: "B1", text: "喫煙所をもっと分かりやすくしてほしい", x: 4.2, y: 4.7, cluster: "B" },
-  { id: "B2", text: "分煙が徹底されていれば問題ない", x: 4.5, y: 4.9, cluster: "B" },
-  { id: "B3", text: "換気の良い喫煙室を増やしてほしい", x: 4.1, y: 4.4, cluster: "B" },
-  { id: "B4", text: "ルールを守らない人が問題", x: 4.3, y: 4.6, cluster: "B" },
-  { id: "B5", text: "喫煙所の位置が不便すぎる", x: 4.0, y: 4.8, cluster: "B" },
-  { id: "B6", text: "もっと静かな喫煙スペースがほしい", x: 4.6, y: 4.5, cluster: "B" },
-  { id: "B7", text: "屋外喫煙所は風向きに配慮してほしい", x: 4.4, y: 4.3, cluster: "B" },
-  { id: "B8", text: "喫煙所の混雑をどうにかしてほしい", x: 4.2, y: 5.0, cluster: "B" },
-  { id: "B9", text: "分煙のルールをもっと周知してほしい", x: 4.1, y: 4.2, cluster: "B" },
-  { id: "B10", text: "喫煙所のマナー向上が必要", x: 4.3, y: 4.1, cluster: "B" },
+• 住民向けの公開ページ
+• クライアントが「結果だけ見せたい」時
+• API を動かせない環境（XServer など）での公開
 
-  // --- Group C (喫煙者の権利) ---
-  { id: "C1", text: "喫煙者のスペースが少なすぎる", x: 0.2, y: -4.5, cluster: "C" },
-  { id: "C2", text: "吸える場所がほとんどない", x: 0.4, y: -4.7, cluster: "C" },
-  { id: "C3", text: "喫煙者ばかりが悪者扱いされている", x: -0.1, y: -4.3, cluster: "C" },
-  { id: "C4", text: "もっとバランスの良いルールにしてほしい", x: 0.3, y: -4.6, cluster: "C" },
-  { id: "C5", text: "喫煙所を減らしすぎだと思う", x: 0.1, y: -4.8, cluster: "C" },
-  { id: "C6", text: "喫煙者の権利も尊重してほしい", x: -0.2, y: -4.4, cluster: "C" },
-  { id: "C7", text: "屋外なら自由に吸わせてほしい", x: 0.5, y: -4.2, cluster: "C" },
-  { id: "C8", text: "喫煙所の数を元に戻してほしい", x: 0.0, y: -4.9, cluster: "C" },
-  { id: "C9", text: "喫煙者への配慮が足りない", x: -0.3, y: -4.6, cluster: "C" },
-  { id: "C10", text: "もっと現実的なルールにしてほしい", x: 0.2, y: -4.3, cluster: "C" },
+
+✔ 2. セキュリティ要件の回避
+
+• API を外部公開したくない
+• データは静的 JSON として置くだけで済む
+• サーバー負荷ゼロ
+
+
+✔ 3. デモ・資料用
+
+• 会議資料
+• 公開レポート
+• スクリーンショット生成
+
+
+✔ 4. Harmonia の “公開ビューア” として再利用可能
+
+将来、Harmonia の Pipeline が生成した結果を
+client_static に吐き出して公開
+という運用ができる。
+
+---
+
+🌲 client_static の構造（一般的な構成）
+
+あなたのプロジェクト構造から推定すると、client_static はこうなっているはず：
+
+client_static/
+  index.html
+  charts.js（または簡易版）
+  data/
+    scatter.json
+    hierarchy.json
+    meta.json
+  assets/
+    css/
+    icons/
+
+
+✔ index.html
+
+• API を叩かない
+• ローカルの JSON を fetch するだけ
+• UI は client とほぼ同じだが、操作が制限されている
+
+
+✔ charts.js（静的版）
+
+• detectApiBase() がない
+• fetch() はすべて ./data/*.json を参照
+• フィルタやクラスタリングは “事前計算済み”
+
+
+✔ data/*.json
+
+• scatter.json → x,y,cluster の固定データ
+• hierarchy.json → clusterList の固定データ
+• meta.json → 公開日時・件数など
+
+
+---
+
+🌲 client_static と client の違い（仕様書レベル）
+
+機能	client（動的）	client_static（静的）	
+データ取得	API（/scatter, /hierarchy）	ローカル JSON	
+クラスタリング	サーバー側で実行	事前計算済み	
+フィルタ	API 経由	ローカルで実行 or 事前計算	
+ダンプ	API	なし（または固定）	
+ヘルスチェック	あり	なし	
+運用者向け機能	あり	なし	
+公開用途	×（内部用）	○（外部公開用）	
+
+
+---
+
+🌲 client_static の仕様書（ドラフト）
+
+以下はそのまま納品資料に使えるレベルでまとめた 仕様書ドラフト。
+
+---
+
+client_static 仕様書（ドラフト）
+
+1. 目的
+
+client_static は、GraphTools の解析結果を
+静的ファイルとして公開するための閲覧専用クライアントである。
+
+API を必要とせず、
+固定データ（JSON）を読み込んで可視化する。
+
+---
+
+2. 機能概要
+
+2.1 データ表示
+
+• scatter.json に基づく散布図表示
+• hierarchy.json に基づく階層ビュー表示
+• meta.json に基づくメタ情報表示（件数・公開日時など）
+
+
+2.2 操作
+
+• ズーム・パン
+• クラスタ別の色分け
+• 点のホバー表示
+• 階層ビューの展開
+
+
+2.3 非対応機能
+
+• API 呼び出し（/scatter, /hierarchy, /filter）
+• ダンプ
+• ヘルスチェック
+• 動的フィルタリング
+• クラスタリングの再計算
+
+
+---
+
+3. データ構造
+
+3.1 scatter.json
+
+[
+  {
+    "id": "001",
+    "x": 0.12,
+    "y": -0.33,
+    "cluster": "A",
+    "summary": "〜",
+    "fullOpinion": "〜"
+  },
+  ...
 ]
 
 
----
+3.2 hierarchy.json
 
-🧩 2. TS → Plotly データ変換（src/scatter.ts）
-
-// src/scatter.ts
-import { opinions } from "./data"
-
-export function buildScatterData() {
-  return opinions.map((op) => ({
-    x: [op.x],
-    y: [op.y],
-    mode: "markers",
-    type: "scattergl",
-    marker: {
-      size: 12,
-      color:
-        op.cluster === "A"
-          ? "#ff6b6b"
-          : op.cluster === "B"
-          ? "#4ecdc4"
-          : "#3a86ff",
-    },
-    text: op.text,
-    hoverinfo: "text",
-  }))
+{
+  "clusterList": [
+    { "id": "C0", "label": "A", "memberIds": ["001","005",...] },
+    ...
+  ]
 }
 
-export function buildLayout() {
-  return {
-    title: "意見の分布図（デモ）",
-    hovermode: "closest",
-    xaxis: { zeroline: false },
-    yaxis: { zeroline: false },
-  }
+
+3.3 meta.json
+
+{
+  "count": 30,
+  "generatedAt": "2025-03-20T12:00:00",
+  "source": "GraphTools v1.7"
 }
 
 
 ---
 
-🧩 3. HTML（.vscode/index.html）
+4. データ生成フロー
 
-<!DOCTYPE html>
-<html lang="ja">
-  <head>
-    <meta charset="UTF-8" />
-    <title>意見分布図デモ</title>
-
-    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
-    <script src="../dist/scatter.js"></script>
-  </head>
-
-  <body>
-    <h2>公聴AI 意見分布図デモ</h2>
-
-    <div id="chart" style="width: 900px; height: 700px;"></div>
-
-    <script>
-      const data = window.buildScatterData()
-      const layout = window.buildLayout()
-
-      Plotly.newPlot("chart", data, layout)
-    </script>
-  </body>
-</html>
+1. 運用者が GraphTools（client）で解析
+2. API（/dump）または手動で JSON を生成
+3. client_static/data/ に配置
+4. index.html がそれを読み込んで描画
+5. 公開サーバー（XServer など）にアップロード
 
 
 ---
 
-🚀 これで「公聴AIの意見分布図デモ」が完成
+5. 想定運用
 
-• React 不要
-• Plotly CDN だけで動く
-• TS でロジックを作り込める
-• 30件の意見データを3つの密集点で配置
-• VSCode の .vscode/index.html を開くだけで動く
+• 行政・自治体の「意見公表ページ」
+• クライアントの「公開レポート」
+• Harmonia の “公開ビューア”
+• デモ資料の生成
 
 
 ---
 
-🌱 次にできること
+🌟 まとめ：client_static は “公開用の固定ビューア”
 
-• クラスタ中心の annotation を TS に追加
-• フィルタリングデモを追加
-• 色の自動割り当て
-• customdata に URL を入れる
-• hoverlabel をリッチ化
+あなたの理解は完全に正しい。
+
+• client → 動的・API・運用者向け
+• client_static → 静的・固定データ・閲覧者向け
 
 
-どれから進めたい？
+そして、
+Harmonia の世界観では、client_static は “公開ビューア” として再利用できる。
+
+---
+
+必要なら：
+
+• client_static のコード解析
+• client と client_static の差分レポート
+• 仕様書の正式版（PDF 風の文章）
+• データ生成スクリプトの設計
+• 公開用テンプレートの作成
+
+
+どれでもすぐに作れるよ。
